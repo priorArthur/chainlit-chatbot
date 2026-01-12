@@ -1,5 +1,10 @@
+import os
 import chainlit as cl
 import anthropic
+
+# Ensure API key is set
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    raise ValueError("ANTHROPIC_API_KEY environment variable is required")
 
 client = anthropic.Anthropic()
 
