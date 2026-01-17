@@ -1,14 +1,34 @@
-# Welcome to Chainlit! 🚀🤖
+# DSCR Calculator & Guide
 
-Hi there, Developer! 👋 We're excited to have you on board. Chainlit is a powerful tool designed to help you prototype, debug and share applications built on top of LLMs.
+A conversational tool for real estate investors to understand and calculate Debt Service Coverage Ratio (DSCR).
 
-## Useful Links 🔗
+## What is DSCR?
 
-- **Documentation:** Get started with our comprehensive [Chainlit Documentation](https://docs.chainlit.io) 📚
-- **Discord Community:** Join our friendly [Chainlit Discord](https://discord.gg/k73SQ3FyUh) to ask questions, share your projects, and connect with other developers! 💬
+DSCR measures whether a rental property's income covers its loan payments. Lenders use it to qualify investors for DSCR loans—mortgages based on property cash flow, not your personal income.
 
-We can't wait to see what you create with Chainlit! Happy coding! 💻😊
+## What This Tool Does
 
-## Welcome screen
+- Helps you calculate your property's DSCR
+- Explains what goes into the formula
+- Answers questions about DSCR loan requirements
+- Guides you through the numbers lenders care about
 
-To modify the welcome screen, edit the `chainlit.md` file at the root of your project. If you do not want a welcome screen, just leave this file empty.
+## Who It's For
+
+Real estate investors exploring DSCR loans for:
+- Single-family rentals
+- Small multifamily (2-4 units)
+- Short-term rentals
+
+## How to Use
+
+Just start a conversation. You can:
+- Ask questions ("What DSCR do lenders require?")
+- Request a calculation ("Can you help me figure out my DSCR?")
+- Explore scenarios ("What if I do interest-only?")
+
+The assistant will ask for the inputs it needs.
+
+## Not Financial Advice
+
+This tool is for education and estimation only. Lender requirements vary. Always verify with your lender before making decisions.

@@ -56,7 +56,7 @@ Be conversational and helpful. Ask one question at a time."""
 async def start():
     """Initialize conversation history when chat starts."""
     cl.user_session.set("history", [])
-    await cl.Message(content="Hi! Are you looking to buy or sell a property?").send()
+    await cl.Message(content="Hi! How much is the monthly rent?").send()
 
 
 @cl.on_message
