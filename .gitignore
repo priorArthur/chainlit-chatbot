@@ -1,6 +1,29 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+
+# Environment
 .env
-.chainlit/
+.env.*
+
+# Chainlit (track config, ignore cache)
+.chainlit/*
+!.chainlit/config.toml
+.files/
+
+# Logs
 *.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/
+
+# IDE (optional)
+.vscode/
+.idea/
