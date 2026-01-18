@@ -23,6 +23,7 @@ from uuid import uuid4
 import anthropic
 import chainlit as cl
 from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+# from chainlit.input_widget import Slider  # TODO: inline slider next week
 
 from boh_db import send_lead_to_kitchen, BOH_DATABASE_URL
 
