@@ -4,3 +4,9 @@ __pycache__/
 .env
 .chainlit/
 *.log
+
+# Dev coordination docs
+.claude/
+SESSION.md
+docs/
+llm.txt
