@@ -33,6 +33,9 @@ from boh_db import send_lead_to_kitchen, BOH_DATABASE_URL
 def get_data_layer():
     db_url = os.environ.get("DATABASE_URL")
     if db_url:
+        # DO managed databases use postgresql:// but SQLAlchemy async needs postgresql+asyncpg://
+        if db_url.startswith("postgresql://") and "+asyncpg" not in db_url:
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return SQLAlchemyDataLayer(conninfo=db_url)
     return None  # No persistence - conversations lost on session end
 
@@ -130,23 +133,159 @@ Guide the conversation to gather:
 
 ## Using the submit_lead Tool
 
-When you have collected the user's contact information (at minimum their name, ideally email or phone too), use the submit_lead tool to capture the lead. Include any geo, loan type, budget, or timeline info from the conversation.
+The user has already selected their loan type, location, and timeline via buttons at the start of the conversation. This data is pre-filled - you don't need to ask for it again.
+
+Focus on gathering:
+1. Budget range (loan amount they're considering)
+2. Property details (if relevant)
+3. Contact info (name, email, phone)
+
+When you have collected the user's contact information (at minimum their name, ideally email or phone too), use the submit_lead tool to capture the lead. The system will automatically merge in the loan type, geo, and timeline from the earlier button selections.
 
 After submitting the lead, thank the user warmly and let them know someone will be in touch soon."""
 
 
+# ============================================================================
+# Structured Input Functions (called from on_chat_start flow)
+# ============================================================================
+
+# Valid US state codes for validation
+US_STATES = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC"
+}
+
+
+async def ask_location():
+    """Ask user which state they're investing in via action buttons."""
+    res = await cl.AskActionMessage(
+        content="Which state are you looking to invest in?",
+        actions=[
+            cl.Action(name="geo", payload={"state": "TX"}, label="🤠 Texas"),
+            cl.Action(name="geo", payload={"state": "FL"}, label="🌴 Florida"),
+            cl.Action(name="geo", payload={"state": "CA"}, label="☀️ California"),
+            cl.Action(name="geo", payload={"state": "other"}, label="📍 Other"),
+        ],
+        timeout=120
+    ).send()
+
+    if res:
+        state = res.get("payload", {}).get("state")
+        if state == "other":
+            # Ask for text input if "Other" selected
+            text_res = await cl.AskUserMessage(
+                content="No problem! Which state are you targeting? (e.g., NY, OH, GA)",
+                timeout=120
+            ).send()
+            if text_res:
+                state = text_res.get("output", "").strip().upper()[:2]  # Normalize to 2-letter code
+                if state not in US_STATES:
+                    await cl.Message(
+                        content=f"'{state}' doesn't look like a US state code. No worries - tell me more during our chat!"
+                    ).send()
+                    state = None
+
+        cl.user_session.get("lead_data")["geo"] = state
+        await ask_timeline()
+    else:
+        # Timeout - continue to conversation anyway
+        await start_conversation("No worries! Let's chat about DSCR loans. What questions do you have?")
+
+
+async def ask_timeline():
+    """Ask user about their timeline via action buttons."""
+    res = await cl.AskActionMessage(
+        content="What's your timeline?",
+        actions=[
+            cl.Action(name="timeline", payload={"value": "asap"}, label="🔥 ASAP"),
+            cl.Action(name="timeline", payload={"value": "1-3mo"}, label="📅 1-3 months"),
+            cl.Action(name="timeline", payload={"value": "3-6mo"}, label="📆 3-6 months"),
+            cl.Action(name="timeline", payload={"value": "6+mo"}, label="🗓️ 6+ months"),
+        ],
+        timeout=120
+    ).send()
+
+    if res:
+        timeline = res.get("payload", {}).get("value")
+        cl.user_session.get("lead_data")["timeline"] = timeline
+
+    await ask_budget()
+
+
+async def ask_budget():
+    """Ask user about their budget range via action buttons."""
+    res = await cl.AskActionMessage(
+        content="What loan amount are you considering?",
+        actions=[
+            cl.Action(name="budget", payload={"min": 100000, "max": 250000}, label="💰 $100K - $250K"),
+            cl.Action(name="budget", payload={"min": 250000, "max": 500000}, label="💰 $250K - $500K"),
+            cl.Action(name="budget", payload={"min": 500000, "max": 1000000}, label="💰 $500K - $1M"),
+            cl.Action(name="budget", payload={"min": 1000000, "max": 5000000}, label="💰 $1M+"),
+        ],
+        timeout=120
+    ).send()
+
+    if res:
+        payload = res.get("payload", {})
+        cl.user_session.get("lead_data")["budget_min"] = payload.get("min")
+        cl.user_session.get("lead_data")["budget_max"] = payload.get("max")
+
+    # Build context message based on all collected data
+    lead_data = cl.user_session.get("lead_data", {})
+    loan_type = lead_data.get("loan_type", "DSCR loan")
+    geo = lead_data.get("geo", "your target area")
+
+    intro = f"Great! So you're exploring a {loan_type} in {geo}. "
+    intro += "Let's talk about the property details. What questions do you have?"
+
+    await start_conversation(intro)
+
+
+async def start_conversation(intro_message: str):
+    """Transition from structured inputs to streaming conversation."""
+    # Add intro to history so Claude has context
+    history = cl.user_session.get("history", [])
+    history.append({"role": "assistant", "content": intro_message})
+    cl.user_session.set("history", history)
+
+    await cl.Message(content=intro_message).send()
+
+
+# ============================================================================
+# Chainlit Event Handlers
+# ============================================================================
+
 @cl.on_chat_start
 async def start():
-    """Initialize conversation history when chat starts."""
+    """Initialize session and start structured input flow with loan type buttons."""
     # Generate unique session ID for deduplication
     session_id = str(uuid4())
     cl.user_session.set("session_id", session_id)
     cl.user_session.set("history", [])
+    cl.user_session.set("lead_data", {})  # Store structured inputs here
     cl.user_session.set("lead_submitted", False)
 
-    await cl.Message(
-        content="Hi! I'm here to help you understand DSCR loans for real estate investing. Are you looking at a purchase, cash-out refinance, or rate-and-term refinance?"
+    # Start with loan type selection via action buttons
+    res = await cl.AskActionMessage(
+        content="Hi! What type of DSCR loan are you exploring?",
+        actions=[
+            cl.Action(name="loan", payload={"type": "purchase"}, label="🏠 Purchase"),
+            cl.Action(name="loan", payload={"type": "cashout"}, label="💵 Cash-Out"),
+            cl.Action(name="loan", payload={"type": "refi"}, label="🔄 Refinance"),
+        ],
+        timeout=120
     ).send()
+
+    if res:
+        loan_type = res.get("payload", {}).get("type")
+        cl.user_session.get("lead_data")["loan_type"] = loan_type
+        await ask_location()  # Continue to Takeout 3's function
+    else:
+        # Timeout or skip - continue to conversation anyway
+        await start_conversation("No worries! What would you like to know about DSCR loans?")
 
 
 @cl.on_message
@@ -179,7 +318,9 @@ async def main(message: cl.Message):
 
         elif block.type == "tool_use" and block.name == "submit_lead":
             # Claude wants to submit the lead
-            lead_data = block.input
+            # Merge structured inputs from buttons with Claude's extracted data
+            structured_data = cl.user_session.get("lead_data", {})
+            lead_data = {**structured_data, **block.input}  # Claude's data overrides if present
 
             # Send to kitchen via direct DB insert
             lead_id = await send_lead_to_kitchen(lead_data, session_id)
