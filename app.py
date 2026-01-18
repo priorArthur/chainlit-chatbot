@@ -8,7 +8,7 @@ import chainlit as cl
 if not os.environ.get("ANTHROPIC_API_KEY"):
     raise ValueError("ANTHROPIC_API_KEY environment variable is required")
 
-client = anthropic.Anthropic()
+client = anthropic.AsyncAnthropic()
 
 # System prompt for your real estate bot
 
@@ -61,19 +61,25 @@ async def start():
 
 @cl.on_message
 async def main(message: cl.Message):
-    """Handle incoming messages."""
+    """Handle incoming messages with streaming response."""
     history = cl.user_session.get("history")
     history.append({"role": "user", "content": message.content})
 
-    response = client.messages.create(
+    # Create empty message for streaming
+    msg = cl.Message(content="")
+    await msg.send()
+
+    # Stream response from Claude
+    async with client.messages.stream(
         model="claude-sonnet-4-20250514",
         max_tokens=500,
         system=SYSTEM_PROMPT,
         messages=history,
-    )
+    ) as stream:
+        async for text in stream.text_stream:
+            await msg.stream_token(text)
 
-    assistant_message = response.content[0].text
-    history.append({"role": "assistant", "content": assistant_message})
+    # Update message and save to history
+    await msg.update()
+    history.append({"role": "assistant", "content": msg.content})
     cl.user_session.set("history", history)
-
-    await cl.Message(content=assistant_message).send()
